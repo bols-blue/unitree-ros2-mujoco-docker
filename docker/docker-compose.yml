@@ -1,0 +1,20 @@
+services:
+  unitree-sim:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: unitree-ros2-sim:humble
+    container_name: unitree-ros2-sim
+    network_mode: host
+    ipc: host
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - LIBGL_ALWAYS_SOFTWARE=1
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/.Xauthority:/root/.Xauthority:rw
+      - ./workspace:/root/workspace
+    stdin_open: true
+    tty: true
+    command: bash
