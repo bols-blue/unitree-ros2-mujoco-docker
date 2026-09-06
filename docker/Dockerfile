@@ -9,7 +9,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libeigen3-dev libfmt-dev \
         libgl1-mesa-dev libglu1-mesa mesa-utils \
         ros-humble-rmw-cyclonedds-cpp ros-humble-rosidl-generator-dds-idl \
-        ros-humble-domain-bridge \
         python3-colcon-common-extensions \
     && rm -rf /var/lib/apt/lists/*
 
@@ -94,11 +93,9 @@ COPY run_mujoco.sh /opt/run_mujoco.sh
 COPY run_go2_walk.sh /opt/run_go2_walk.sh
 COPY run_go2_walk_ros2.sh /opt/run_go2_walk_ros2.sh
 COPY run_go2_lidar_ros2.sh /opt/run_go2_lidar_ros2.sh
-COPY domain_bridge.yaml /opt/domain_bridge.yaml
-COPY run_domain_bridge.sh /opt/run_domain_bridge.sh
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /opt/setup_env.sh /opt/run_mujoco.sh /opt/run_go2_walk.sh /opt/run_go2_walk_ros2.sh \
-        /opt/run_go2_lidar_ros2.sh /opt/run_domain_bridge.sh /entrypoint.sh
+        /opt/run_go2_lidar_ros2.sh /entrypoint.sh
 
 WORKDIR /root
 ENTRYPOINT ["/entrypoint.sh"]

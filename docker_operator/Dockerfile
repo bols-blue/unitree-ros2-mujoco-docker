@@ -8,10 +8,13 @@ SHELL ["/bin/bash", "-c"]
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-humble-rmw-cyclonedds-cpp \
         ros-humble-teleop-twist-keyboard \
+        ros-humble-domain-bridge \
     && rm -rf /var/lib/apt/lists/*
 
 COPY setup_env_domain30.sh /opt/setup_env_domain30.sh
-RUN chmod +x /opt/setup_env_domain30.sh
+COPY domain_bridge.yaml /opt/domain_bridge.yaml
+COPY run_domain_bridge.sh /opt/run_domain_bridge.sh
+RUN chmod +x /opt/setup_env_domain30.sh /opt/run_domain_bridge.sh
 
 WORKDIR /root
 CMD ["bash"]
