@@ -44,6 +44,10 @@ unitree_sdk2同梱のcyclonedds(`/opt/unitree_robotics/lib`)より優先され�
 
 Go2ロボットが読み込まれたMuJoCoウィンドウが表示されれば成功です。
 
+**Tips**: 左右のUIパネル(Simulation/Watch/Physics等、Joint/Control/Equality等)はデフォルトで非表示にしており、
+3Dビューポートが画面いっぱいに表示されます。必要なときはMuJoCoウィンドウにフォーカスした状態で
+`Tab`キー(左パネル)・`Shift+Tab`キー(右パネル)でいつでも表示/非表示を切り替えられます。
+
 ### 2. 別ターミナルからROS2で状態を確認（ターミナル2）
 
 同じコンテナにもう1つ入る:
@@ -180,6 +184,100 @@ ros2 run teleop_twist_keyboard teleop_twist_keyboard
 `i`で前進、`,`で後退、`j`/`l`で旋回、`k`で停止、といった通常のteleop_twist_keyboard操作でGo2の歩行方向・速度をリアルタイムに変えられます。`/cmd_vel`に`{0,0,0}`（`k`キーまたは無操作）を送るとその場で安定して立ち止まることを実測確認済みです。
 
 **注意**: `teleop_twist_keyboard`のデフォルト速度(0.5m/s前後、旋回1.0rad/s)は`go2.yaml`の`max_cmd: [2.0, 1.0, 2.5]`の範囲内なのでそのまま使えますが、速度を上げすぎる（`q`/`z`キーで倍率変更）とこの学習済みポリシーの想定範囲を超えて不安定化する可能性があります。
+
+## LiDARをシミュレーションする(疑似3Dスキャン、動作確認済み)
+
+`unitree_mujoco`自体はLiDARをシミュレートしていないため、ROS2トピック経由でGo2の姿勢
+(`/sportmodestate`の`position` + `/lowstate`の`imu_state.quaternion`・関節角)を再構成し、同じシーン
+(`scene_terrain.xml`)を読み込んだ「物理演算はしない」シャドー用のMuJoCoモデル上で`mj_ray()`による
+レイキャストを行うことで、Velodyne VLP-16相当(垂直16ch、仰角±15°、水平360点、10Hz)の疑似3D走査
+LiDAR(`sensor_msgs/PointCloud2`)を`go2_lidar_ros2_node.py`で生成します。あわせて`tf`(`world`→`lidar_link`)
+も配信するので、rviz2でそのまま位置合わせして表示できます。
+
+**注意**: これは実機のUnitree L1(独自の非回転式3D走査パターン)を再現したものではありません。ノイズなし・
+理想化された等間隔垂直チャンネル走査で、地形(`scene_terrain.xml`の静的ジオメトリ)に対する距離だけを
+計算します(ロボット本体の可動部・メッシュは意図的にレイキャスト対象から除外しているため自己遮蔽は
+起きません)。5760本/フレームのレイキャストは実測11ms程度なので10Hzには十分余裕があります。
+
+```bash
+# ターミナル1(ROS2はsourceしない)
+/opt/run_mujoco.sh -r go2 -s scene_terrain.xml
+```
+```bash
+# ターミナル2: LiDARブリッジノード
+docker exec -it unitree-ros2-sim bash
+/opt/run_go2_lidar_ros2.sh
+```
+```bash
+# ターミナル3: 可視化
+docker exec -it unitree-ros2-sim bash
+source /opt/setup_env.sh
+rviz2
+```
+rviz2側では「Fixed Frame」を`world`に設定し、「Add」→ **PointCloud2**(Topic: `/points`)と **TF** を追加すると、
+ロボットの移動・旋回に追従して3D点群が表示されます。
+
+## ドメインを分離した運用(ロボット側=ドメイン1、操作卓側=ドメイン30、動作確認済み)
+
+シミュレータ側は他の節と同じデフォルトドメイン(1)のまま動かし、`teleop_twist_keyboard`・`rviz2`だけを
+隔離された別ドメイン(30)・別コンテナ(`../docker_operator/`)で動かす構成です。両ドメイン間は
+[`ros-humble-domain-bridge`](https://github.com/ros-tooling/domain_bridge)(`docker/domain_bridge.yaml`)で
+中継し、**`/points`・`/tf`(1→30)・`/cmd_vel`(30→1)の3トピックだけ**が橋渡しされます。
+`/lowstate`・`/lowcmd`・`/sportmodestate`等のロボット内部トピックはドメイン30には一切漏れません。
+
+```
+Domain 1 (docker/, このシミュレータコンテナ)          Domain 30 (../docker_operator/, 別コンテナ)
+  unitree_mujoco                                        teleop_twist_keyboard
+  go2_walk_ros2_node.py (RL歩行)      domain_bridge         │ /cmd_vel
+  go2_lidar_ros2_node.py (疑似3D LiDAR) ⇄  /points ────────▶ rviz2
+                                          ⇄  /tf ──────────▶ rviz2
+                                          ⇄  /cmd_vel ◀──── teleop_twist_keyboard
+```
+
+両コンテナとも`network_mode: host`なので実質ホストのネットワーク名前空間を共有しており、
+loopback(`lo`)経由のDDS通信はコンテナをまたいでもそのまま届きます。
+
+### 起動手順(ドメイン1側4ターミナル)
+
+```bash
+# ターミナル1: MuJoCo本体(ROS2はsourceしない)
+/opt/run_mujoco.sh -r go2 -s scene_terrain.xml
+```
+```bash
+# ターミナル2: RL歩行ポリシー(/cmd_vel購読)
+docker exec -it unitree-ros2-sim bash
+/opt/run_go2_walk_ros2.sh
+```
+```bash
+# ターミナル3: 疑似3D LiDARブリッジ
+docker exec -it unitree-ros2-sim bash
+/opt/run_go2_lidar_ros2.sh
+```
+```bash
+# ターミナル4: domain_bridge(ドメイン1 <-> 30)
+docker exec -it unitree-ros2-sim bash
+/opt/run_domain_bridge.sh
+```
+
+### 起動手順(ドメイン30側、`../docker_operator/`コンテナ・2ターミナル)
+
+```bash
+cd docker_operator
+xhost +local:docker   # 初回のみ
+docker compose run --rm operator
+```
+```bash
+# ターミナル5: teleop(このコンテナに1つ目のシェルとして入る)
+source /opt/setup_env_domain30.sh
+ros2 run teleop_twist_keyboard teleop_twist_keyboard
+```
+```bash
+# ターミナル6: rviz2(同じコンテナにもう1つ入る: docker exec -it unitree-ros2-operator bash)
+source /opt/setup_env_domain30.sh
+rviz2
+```
+rviz2で「Fixed Frame」を`world`に設定し、「Add」→ **PointCloud2**(Topic: `/points`)と **TF** を追加すれば、
+teleopのキー操作でGo2が歩き、その3D LiDAR点群がドメインをまたいで表示されます。
 
 ## unitree_sdk2を直接使う（ROS2を介さないC++）
 

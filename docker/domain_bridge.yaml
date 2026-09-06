@@ -1,0 +1,17 @@
+# Go2シミュレータ(ドメイン1)とオペレータ側(ドメイン30、docker_operator/コンテナ)を
+# つなぐ domain_bridge 設定。中継するのは以下の3トピックのみで、
+# /lowstate・/lowcmd・/sportmodestate 等のロボット内部トピックはドメイン30には一切漏れない。
+name: go2_domain_bridge
+from_domain: 1
+to_domain: 30
+topics:
+  # 疑似3D LiDAR点群 (go2_lidar_ros2_node.py が発行): ドメイン1 -> 30
+  points:
+    type: sensor_msgs/msg/PointCloud2
+  # tf(world -> lidar_link): ドメイン1 -> 30
+  tf:
+    type: tf2_msgs/msg/TFMessage
+  # teleop_twist_keyboard の速度指令: ドメイン30 -> 1 (向きを反転)
+  cmd_vel:
+    type: geometry_msgs/msg/Twist
+    reversed: true

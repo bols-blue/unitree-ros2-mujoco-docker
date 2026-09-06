@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libeigen3-dev libfmt-dev \
         libgl1-mesa-dev libglu1-mesa mesa-utils \
         ros-humble-rmw-cyclonedds-cpp ros-humble-rosidl-generator-dds-idl \
+        ros-humble-domain-bridge \
         python3-colcon-common-extensions \
     && rm -rf /var/lib/apt/lists/*
 
@@ -26,7 +27,13 @@ RUN MUJOCO_VER=$(curl -fsSL https://api.github.com/repos/google-deepmind/mujoco/
     && wget -q "https://github.com/google-deepmind/mujoco/releases/download/${MUJOCO_VER}/mujoco-${MUJOCO_VER}-linux-x86_64.tar.gz" -O /tmp/mujoco.tar.gz \
     && mkdir -p /opt/mujoco \
     && tar -xzf /tmp/mujoco.tar.gz -C /opt/mujoco --strip-components=1 \
-    && rm /tmp/mujoco.tar.gz
+    && rm /tmp/mujoco.tar.gz \
+    # 左右のUIパネル(Tab/Shift+Tabで開閉可能)をデフォルト非表示にし、3Dビューポートを
+    # 画面いっぱいに使う。simulate.h の初期値を書き換えてビルドに反映させる。
+    && sed -i \
+        -e 's/int ui0_enable = 1;/int ui0_enable = 0;/' \
+        -e 's/int ui1_enable = 1;/int ui1_enable = 0;/' \
+        /opt/mujoco/simulate/simulate.h
 
 # ---- unitree_mujoco simulator (C++, uses unitree_sdk2 + mujoco) ----
 RUN git clone --depth 1 https://github.com/unitreerobotics/unitree_mujoco.git /opt/unitree_mujoco \
@@ -80,13 +87,18 @@ ENV PYTHONPATH="/opt/go2_rl_gym:${PYTHONPATH}"
 # rclpy (already in ros-humble-desktop) needs the same torch/numpy/yaml installed above
 # to run the go2_rl_gym policy as a ROS2 node bridging /lowstate <-> /lowcmd.
 COPY go2_walk_ros2_node.py /opt/go2_walk_ros2_node.py
+COPY go2_lidar_ros2_node.py /opt/go2_lidar_ros2_node.py
 
 COPY setup_env.sh /opt/setup_env.sh
 COPY run_mujoco.sh /opt/run_mujoco.sh
 COPY run_go2_walk.sh /opt/run_go2_walk.sh
 COPY run_go2_walk_ros2.sh /opt/run_go2_walk_ros2.sh
+COPY run_go2_lidar_ros2.sh /opt/run_go2_lidar_ros2.sh
+COPY domain_bridge.yaml /opt/domain_bridge.yaml
+COPY run_domain_bridge.sh /opt/run_domain_bridge.sh
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /opt/setup_env.sh /opt/run_mujoco.sh /opt/run_go2_walk.sh /opt/run_go2_walk_ros2.sh /entrypoint.sh
+RUN chmod +x /opt/setup_env.sh /opt/run_mujoco.sh /opt/run_go2_walk.sh /opt/run_go2_walk_ros2.sh \
+        /opt/run_go2_lidar_ros2.sh /opt/run_domain_bridge.sh /entrypoint.sh
 
 WORKDIR /root
 ENTRYPOINT ["/entrypoint.sh"]

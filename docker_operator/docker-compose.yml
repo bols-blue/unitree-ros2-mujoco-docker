@@ -1,0 +1,22 @@
+services:
+  operator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: unitree-ros2-operator:humble
+    container_name: unitree-ros2-operator
+    # docker/ 側のシミュレータコンテナも network_mode: host のため、
+    # 両方とも実質ホストのネットワーク名前空間を共有する。lo経由のDDS通信
+    # (ドメイン1 <-domain_bridge-> ドメイン30) はこれで別コンテナ間でも届く。
+    network_mode: host
+    ipc: host
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - LIBGL_ALWAYS_SOFTWARE=1
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/.Xauthority:/root/.Xauthority:rw
+    stdin_open: true
+    tty: true
+    command: bash
