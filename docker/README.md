@@ -217,67 +217,11 @@ rviz2
 rviz2側では「Fixed Frame」を`world`に設定し、「Add」→ **PointCloud2**(Topic: `/points`)と **TF** を追加すると、
 ロボットの移動・旋回に追従して3D点群が表示されます。
 
-## ドメインを分離した運用(ロボット側=ドメイン1、操作卓側=ドメイン30、動作確認済み)
+## ドメインを分離した運用(ロボット側=ドメイン1、操作卓側=ドメイン30)
 
-シミュレータ側は他の節と同じデフォルトドメイン(1)のまま動かし、`teleop_twist_keyboard`・`rviz2`だけを
-隔離された別ドメイン(30)・別コンテナ(`../docker_operator/`)で動かす構成です。両ドメイン間は
-[`ros-humble-domain-bridge`](https://github.com/ros-tooling/domain_bridge)(`docker/domain_bridge.yaml`)で
-中継し、**`/points`・`/tf`(1→30)・`/cmd_vel`(30→1)の3トピックだけ**が橋渡しされます。
-`/lowstate`・`/lowcmd`・`/sportmodestate`等のロボット内部トピックはドメイン30には一切漏れません。
-
-```
-Domain 1 (docker/, このシミュレータコンテナ)          Domain 30 (../docker_operator/, 別コンテナ)
-  unitree_mujoco                                        teleop_twist_keyboard
-  go2_walk_ros2_node.py (RL歩行)      domain_bridge         │ /cmd_vel
-  go2_lidar_ros2_node.py (疑似3D LiDAR) ⇄  /points ────────▶ rviz2
-                                          ⇄  /tf ──────────▶ rviz2
-                                          ⇄  /cmd_vel ◀──── teleop_twist_keyboard
-```
-
-両コンテナとも`network_mode: host`なので実質ホストのネットワーク名前空間を共有しており、
-loopback(`lo`)経由のDDS通信はコンテナをまたいでもそのまま届きます。
-
-### 起動手順(ドメイン1側4ターミナル)
-
-```bash
-# ターミナル1: MuJoCo本体(ROS2はsourceしない)
-/opt/run_mujoco.sh -r go2 -s scene_terrain.xml
-```
-```bash
-# ターミナル2: RL歩行ポリシー(/cmd_vel購読)
-docker exec -it unitree-ros2-sim bash
-/opt/run_go2_walk_ros2.sh
-```
-```bash
-# ターミナル3: 疑似3D LiDARブリッジ
-docker exec -it unitree-ros2-sim bash
-/opt/run_go2_lidar_ros2.sh
-```
-```bash
-# ターミナル4: domain_bridge(ドメイン1 <-> 30)
-docker exec -it unitree-ros2-sim bash
-/opt/run_domain_bridge.sh
-```
-
-### 起動手順(ドメイン30側、`../docker_operator/`コンテナ・2ターミナル)
-
-```bash
-cd docker_operator
-xhost +local:docker   # 初回のみ
-docker compose run --rm operator
-```
-```bash
-# ターミナル5: teleop(このコンテナに1つ目のシェルとして入る)
-source /opt/setup_env_domain30.sh
-ros2 run teleop_twist_keyboard teleop_twist_keyboard
-```
-```bash
-# ターミナル6: rviz2(同じコンテナにもう1つ入る: docker exec -it unitree-ros2-operator bash)
-source /opt/setup_env_domain30.sh
-rviz2
-```
-rviz2で「Fixed Frame」を`world`に設定し、「Add」→ **PointCloud2**(Topic: `/points`)と **TF** を追加すれば、
-teleopのキー操作でGo2が歩き、その3D LiDAR点群がドメインをまたいで表示されます。
+`teleop_twist_keyboard`・`rviz2`を隔離された別ドメイン(30)・別コンテナ(`../docker_operator/`)で動かし、
+`domain_bridge`経由で`/points`・`/tf`・`/cmd_vel`の3トピックだけを橋渡しする構成です。
+手順・構成図は[`../docker_operator/README.md`](../docker_operator/README.md)を参照してください。
 
 ## unitree_sdk2を直接使う（ROS2を介さないC++）
 
